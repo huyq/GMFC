@@ -1,0 +1,8 @@
+__pycache__/
+.ipynb_checkpoints/
+
+sis_graphon-v0/
+sis_graphon_finite-v0/
+
+*.txt
+*.ipynb
