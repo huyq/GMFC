@@ -1,3 +1,4 @@
+import argparse
 import gym
 from gym import spaces
 import numpy as np
@@ -9,8 +10,15 @@ from ray.rllib.models import ModelCatalog
 from models import GraphonModel
 from envs import SISGraphon, SISGraphonNPlayer
 
-
-def main():
+def arg_parse():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num-agents", type=int, default=20)
+    
+    args = parser.parse_args()
+    
+    return args
+    
+def main(args):
     def env_creator(env_config=None):
         return SISGraphon()
     
@@ -38,11 +46,12 @@ def main():
     
     agent = ppo.PPOTrainer(env='sis_graphon-v0',config=config)
     
-    agent.restore("sis_graphon-v0/PPO/PPO_sis_graphon-v0_3d245_00000_0_2022-05-15_14-57-09/checkpoint_000100/checkpoint-100")
+    agent.restore("sis_graphon-v0/PPO/PPO_sis_graphon-v0_ba8bc_00000_0_2022-05-16_15-28-06/checkpoint_000200/checkpoint-200")
     
     env_g = SISGraphon()
     
-    env = SISGraphonNPlayer()
+    env_config = {"num_players":args.num_agents}
+    env = SISGraphonNPlayer(env_config)
     episode_reward = []
     eval_num = 10
     for T in range(eval_num):
@@ -75,4 +84,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    args = arg_parse()
+    main(args)

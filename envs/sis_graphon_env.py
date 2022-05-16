@@ -4,26 +4,24 @@ import numpy as np
 
 
 class SISGraphon(gym.Env):
-    def __init__(self,time_obs_augment=False):
+    def __init__(self, env_config={}):
         super(SISGraphon,self).__init__()
         
-        self.time_obs_augment = time_obs_augment
-        self.time_steps = 50
-        #self.adj_matrix = np.random.random((20,20)) 
-        #self.adj_matrix = np.ones((20,20))*0.8
-        self.adj_matrix = np.array([[0.9,0.4],[0.4,0.9]])
-        #self.adj_matrix = np.ones((1,1))
+        
+        self.time_obs_augment = env_config.get("time_obs_augment", False)
+        self.time_steps = env_config.get("time_steps", 50)
+        self.adj_matrix = env_config.get("adj_matrix", np.array([[0.9,0.4],[0.4,0.9]]))
+
         
         # hyperparameters for state transition
-        self.beta1 = 0.8
-        self.beta2 = 0
-        self.delta = 0.3
+        self.beta1 = env_config.get("beta1", 0.8)
+        self.beta2 = env_config.get("beta2", 0)
+        self.delta = env_config.get("delta", 0.3)
         
         # hyperparameters for reward function
-        self.gamma = 0.95
-        self.c1 = 2
-        self.c2 = 0.3
-        self.c3 = 0.5
+        self.c1 = env_config.get("c1", 2)
+        self.c2 = env_config.get("c2", 0.3)
+        self.c3 = env_config.get("c3", 0.5)
         
         self.M = self.adj_matrix.shape[0]
         self.S = 2    # S, I
@@ -166,11 +164,6 @@ def test_env():
 
         
     
-    
-    
-
-    
-
 
 if __name__ == '__main__':
     test_env()

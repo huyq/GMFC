@@ -1,3 +1,4 @@
+import argparse
 from ray.tune.registry import register_env
 from ray.rllib.agents import ppo, ddpg
 from ray.rllib.models import ModelCatalog
@@ -7,8 +8,13 @@ from envs import SISGraphon
 from models import GraphonModel
 
 
-def env_creator(env_config=None):
-    return SISGraphon()
+def arg_parse():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--algo", type=str, default="ppo")
+    args = parser.parse_args()
+    
+    return args
+
     
 def test_single_step(agent):
     env = SISGraphon()
@@ -22,7 +28,7 @@ def test_single_step(agent):
     
     
 def train_ppo():
-    register_env("sis_graphon-v0",env_creator)
+    register_env("sis_graphon-v0",lambda config: SISGraphon(config))
     
     model_name = 'sis_graphon'
     ModelCatalog.register_custom_model(model_name, GraphonModel)
@@ -30,14 +36,15 @@ def train_ppo():
     
     config = ppo.DEFAULT_CONFIG.copy()
     config.update({
+        "env": "sis_graphon-v0",
+        "env_config":{},
         "framework": "torch",
-        "train_batch_size": 256,
+        "train_batch_size": 128,
         #"lr":1e-3,
-        "lr_schedule": [[0, 1e-3], [1000000, 1e-7]],
-        "rollout_fragment_length": 8,
+        "lr_schedule": [[0, 5e-4], [2000000, 1e-8]],
+        "rollout_fragment_length": 10,
         "gamma": 0.95,
         "seed": 0,
-        "env": "sis_graphon-v0",
         "model": {
             "custom_model": 'sis_graphon',
             "custom_model_config":{},
@@ -48,7 +55,7 @@ def train_ppo():
     tune.run("PPO",
              config=config,
              local_dir="sis_graphon-v0",
-             stop={"training_iteration":100},
+             stop={"training_iteration":200},
              checkpoint_freq = 10,
              checkpoint_at_end = True,
     )
@@ -56,7 +63,7 @@ def train_ppo():
     
     
 def train_ddpg():    
-    register_env("sis_graphon-v0",env_creator)
+    register_env("sis_graphon-v0",lambda config: SISGraphon(config))
 
     
     config = ddpg.ddpg.DEFAULT_CONFIG.copy()
@@ -73,6 +80,7 @@ def train_ddpg():
     config["tau"] = 0.001
     config["rollout_fragment_length"] = 8
     config["gamma"] = 0.95
+    config["env_config"] = {}
     
     
     agent1 = ddpg.DDPGTrainer(env='sis_graphon-v0',config=config)
@@ -82,40 +90,16 @@ def train_ddpg():
         result = agent1.train()
         print(_, result['episode_reward_mean'])
     
-    #state = agent1.save()
+
+    test_single_step(agent1)
     
-    #agent1.stop()
-    
-    #config["critic_lr"] = 5e-6
-    #config["actor_lr"] = 1e-6
-    #
-    #agent2 = ddpg.DDPGTrainer(env='sis_graphon-v0',config=config)
-    #agent2.restore(state)
-    #
-    #for _ in range(50):
-    #    result = agent2.train()
-    #    print(_, result['episode_reward_mean'])
-    #
-    #
-    #agent2.stop()
-    #
-    #return
-           
-    
-    mu = np.array([[0.5,0.5],[0.5,0.5]])
-    #obs = tuple([mu,np.array(0, dtype=np.float32)])
-    
-    action = agent1.compute_single_action(observation=mu)
-    env = SISGraphon()
-    pi = env.act_transform(action)
-    print(pi)
     agent1.stop()
     
 
 
 
 def train_td3():
-    register_env("sis_graphon-v0",env_creator)
+    register_env("sis_graphon-v0",lambda config: SISGraphon(config))
 
     
     config = ddpg.td3.TD3_DEFAULT_CONFIG.copy()
@@ -131,30 +115,30 @@ def train_td3():
     config["policy_delay"] = 1
     config["tau"] = 0.001
     config["rollout_fragment_length"] = 16
-    config["gamma"] = 0
+    config["gamma"] = 0.95
+    config["env_config"] = {}
     
     agent1 = ddpg.TD3Trainer(env='sis_graphon-v0',config=config)
     
     
-    #f = open('output.txt','w+')
+
     for iter in range(50):
         result = agent1.train()
-        #f.write(str(result['episode_reward_mean'])+'\n')
         print(iter, result['episode_reward_mean'])
     
-    #f.close()
     
-    
-    mu = np.array([[0.5,0.5],[0.5,0.5]])
-    #obs = tuple([mu,np.array(0, dtype=np.float32)])
-    
-    action = agent1.compute_single_action(observation=mu)
-    env = SISGraphon()
-    pi = env.act_transform(action)
-    print(pi)
-    
+    test_single_step(agent1)
+   
     agent1.stop()
+    
 
 
 if __name__ == '__main__':
-    train_ppo()
+    args = arg_parse()
+    
+    if args.algo == 'ppo':
+        train_ppo()
+    elif args.algo == 'ddpg':
+        train_ddpg()
+    elif args.algo == 'td3':
+        train_td3()

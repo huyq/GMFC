@@ -1,31 +1,28 @@
 import sys
 import gym
-from gym.spaces import Tuple, Discrete, MultiDiscrete
+from gym.spaces import Tuple, Discrete, MultiDiscrete, Dict, Box
 from ray.rllib import MultiAgentEnv
 import numpy as np
 
 
 class SISGraphonNPlayer(MultiAgentEnv):
-    def __init__(self,time_obs_augment=False):
+    def __init__(self, env_config={}):
         super(SISGraphonNPlayer,self).__init__()
         
-        self.N = 20
+        self.N = env_config.get("num_players", 20)
+        self.time_steps = env_config.get("time_steps", 50)
+        self.adj_matrix = env_config.get("adj_matrix", np.array([[0.9,0.4],[0.4,0.9]]))
         
-        self.time_obs_augment = time_obs_augment
-        self.time_steps = 50
-        self.adj_matrix = np.array([[0.9,0.4],[0.4,0.9]])
-
         
         # hyperparameters for state transition
-        self.beta1 = 0.8
-        self.beta2 = 0
-        self.delta = 0.3
+        self.beta1 = env_config.get("beta1", 0.8)
+        self.beta2 = env_config.get("beta2", 0)
+        self.delta = env_config.get("delta", 0.3)
         
         # hyperparameters for reward function
-        self.gamma = 0.95
-        self.c1 = 2
-        self.c2 = 0.3
-        self.c3 = 0.5
+        self.c1 = env_config.get("c1", 2)
+        self.c2 = env_config.get("c2", 0.3)
+        self.c3 = env_config.get("c3", 0.5)
         
         self.M = self.adj_matrix.shape[0]
         self.S = 2    # S, I
@@ -36,14 +33,11 @@ class SISGraphonNPlayer(MultiAgentEnv):
         self._agent_ids = set(range(self.N))
 
         
-        if self.time_obs_augment:
-            self.observation_space = spaces.Tuple([self.state_space, spaces.Box(0,self.time_steps,shape=())])
-        else:
-            self.observation_space = self.state_space
+        self.observation_space = self.state_space
             
         self.t = None
         self.x = None
-        self.reset()
+        #self.reset()
         
     
     def reset(self):
@@ -57,6 +51,8 @@ class SISGraphonNPlayer(MultiAgentEnv):
         #        self.adj_matrix[i][j] = edge
         #        self.adj_matrix[j][i] = edge
             
+
+        
 
         obs = {agent_id: self.x[agent_id] for agent_id in range(self.N)}
         
@@ -101,9 +97,9 @@ class SISGraphonNPlayer(MultiAgentEnv):
         r = - s * self.c1 - s * (1-a) *self.c3 - a * self.c2
         return r / self.N
     
-    def graphon_mean_field(self, x, node_index):
+    def graphon_mean_field(self, x, agent_id):
         mu_g = np.zeros(self.S)
-        alpha = x[node_index][0]
+        alpha = x[agent_id][0]
         for _x in x:
             beta = _x[0]
             mu_g[_x[1]] += self.adj_matrix[alpha][beta]
@@ -146,22 +142,21 @@ class SISGraphonNPlayer(MultiAgentEnv):
     def step(self,u):
         next_state = []
         reward = {}
-        for node_index in range(self.N):
-            G = self.graphon_mean_field(self.x, node_index)
-            transition_prob = self.transition_probs_g(self.t, self.x[node_index], u[node_index], G)
-            next_state.append(tuple([self.x[node_index][0], np.random.choice(range(self.S), 1, None,
+        for agent_id in range(self.N):
+            G = self.graphon_mean_field(self.x, agent_id)
+            transition_prob = self.transition_probs_g(self.t, self.x[agent_id], u[agent_id], G)
+            next_state.append(tuple([self.x[agent_id][0], np.random.choice(range(self.S), 1, None,
                 p=transition_prob).item()]))
             
             
-            reward[node_index] = self.get_reward(self.x[node_index],u[node_index],G)
+            reward[agent_id] = self.get_reward(self.x[agent_id],u[agent_id],G)
             
         self.x = next_state
         self.t += 1
         
-        observation = {node_idx:next_state[node_idx] for node_idx in range(len(next_state))}
-        done = self.t >= self.time_steps
-        done = {idx:done for idx in range(self.N)}
-        done['__all__'] = self.t >= self.time_steps
+     
+        observation = {agent_id: next_state[agent_id] for agent_id in range(self.N)}
+        done = {"__all__": self.t >= self.time_steps}
         
         return observation, reward, done, {}
 
@@ -178,7 +173,7 @@ def test_env():
         obs, reward, done, info = env.step(action)
         reward = [reward[idx] for idx in reward.keys()]
         
-        total_reward += sum(reward)/env.N
+        total_reward += sum(reward)
         if done:
             env.reset()
     

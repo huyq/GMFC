@@ -1,21 +1,28 @@
+import argparse
 from ray.tune.registry import register_env
-from ray.rllib.agents import ppo, ddpg
+from ray.rllib.agents import ppo, ddpg, qmix
 from ray.rllib.models import ModelCatalog
 from ray.rllib.agents.ppo.ppo_torch_policy import PPOTorchPolicy
 from ray.rllib.agents.dqn.dqn_torch_policy import DQNTorchPolicy
+from ray.rllib.agents.qmix import QMixTrainer
 from ray.rllib.examples.models.shared_weights_model import TorchSharedWeightsModel
 from ray import tune
+from gym.spaces import Tuple, Discrete, MultiDiscrete, Dict
 
 from envs import SISGraphonNPlayer
 
 
+def arg_parse():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--algo", type=str, default="qmix")
+    parser.add_argument("--num-agents", type=int, default=20)
+    
+    args = parser.parse_args()
+    
+    return args
 
-def env_creator(env_config=None):
-    return SISGraphonNPlayer()
-
-
-def train_ppo():
-    register_env("sis_graphon_finite-v0",env_creator)
+def train_ippo(args):
+    register_env("sis_graphon_finite-v0",lambda config: SISGraphonNPlayer(config))
     
     env = SISGraphonNPlayer()
     obs_space = env.observation_space
@@ -30,12 +37,15 @@ def train_ppo():
     
     config.update({
         "env": "sis_graphon_finite-v0",
+        "env_config":{
+            "num_players": args.num_agents,  
+        },
         #"num_gpus": 1,
-        #"num_workers": 8,
+        "num_workers": 7,
         "framework": "torch",
-        "train_batch_size": 1024,
+        "train_batch_size": 512,
         #"lr":1e-3,
-        "lr_schedule": [[0, 1e-4], [1000000, 1e-8]],
+        "lr_schedule": [[0, 5e-5], [1000000, 1e-8]],
         "rollout_fragment_length": 64,
         "gamma": 0.95,
         "seed": 0,
@@ -57,13 +67,13 @@ def train_ppo():
     tune.run("PPO",
              config=config,
              local_dir="sis_graphon_finite-v0",
-             stop={"training_iteration":100},
+             stop={"training_iteration":200},
              checkpoint_freq = 50,
              checkpoint_at_end = True,
     )
 
-def train_iqn():
-    register_env("sis_graphon_finite-v0",env_creator)
+def train_iqn(args):
+    register_env("sis_graphon_finite-v0",lambda config: SISGraphonNPlayer(config))
     
     env = SISGraphonNPlayer()
     obs_space = env.observation_space
@@ -73,12 +83,15 @@ def train_iqn():
     
     tune.run(
         "DQN",
-        stop={"training_iteration":100},
+        stop={"training_iteration":200},
         local_dir="sis_graphon_finite-v0",
         checkpoint_freq=20,
         config={
             # Enviroment specific.
             "env": "sis_graphon_finite-v0",
+            "env_config":{
+                "num_players": args.num_agents,  
+            },
             "framework": "torch",
             # General
             #"num_gpus": 1,
@@ -97,7 +110,7 @@ def train_iqn():
             "target_network_update_freq": 8000,
             "adam_epsilon": 0.00015,
             "learning_starts": 20000,
-            "buffer_size": int(1e6),
+            "buffer_size": int(1e5),
             "rollout_fragment_length": 64,
             "train_batch_size": 512,
             # Method specific.
@@ -117,9 +130,64 @@ def train_iqn():
             
         },
     )
-
     
 
+def train_qmix(args): 
+    env = SISGraphonNPlayer()
+    obs_space = env.observation_space
+    act_space = env.action_space
+    
+    grouping = {
+        "group_1": list(range(env.N))
+    }
+    
+    obs_space = Tuple([obs_space for _ in range(env.N)])
+    act_space = Tuple([act_space for _ in range(env.N)])
+    
+    register_env(
+            "sis_graphon_finite-v1",
+            lambda config: SISGraphonNPlayer(config).with_agent_groups(
+                grouping, obs_space=obs_space, act_space=act_space
+            ),
+    )
+    
+    config = qmix.DEFAULT_CONFIG
+    
+    config.update({
+        "env": "sis_graphon_finite-v1",
+        "env_config":{
+            "num_players": args.num_agents,  
+        },
+        "framework":"torch",
+        "mixer": "qmix",
+        "gamma": 0.95,
+        "num_envs_per_worker": 5, 
+        "num_workers": 7,
+        "lr": 5e-5,
+        #"mixing_embed_dim": 32,
+        "target_network_update_freq": 5000,
+        "rollout_fragment_length": 16,
+        "train_batch_size": 128,
+    })
+    
+    
+    
+    tune.run("QMIX",
+             config=config,
+             local_dir="sis_graphon_finite-v1",
+             stop={"training_iteration":100},
+             checkpoint_freq = 10,
+             checkpoint_at_end = True,
+    )
+    
+
+
 if __name__ == '__main__':
-    #train_ppo()
-    train_iqn()
+    args = arg_parse()
+    
+    if args.algo == 'ippo':
+        train_ippo(args)
+    elif args.algo == 'iqn':
+        train_iqn(args)
+    elif args.algo == 'qmix':
+        train_qmix(args)
