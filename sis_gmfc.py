@@ -9,51 +9,65 @@ from ray.rllib.models import ModelCatalog
 
 from models import GraphonModel
 from envs import SISGraphon, SISGraphonNPlayer
+from graphon import *
 
 def arg_parse():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num-agents", type=int, default=20)
+    parser.add_argument("--graphon-type", type=int, default=2)
+    parser.add_argument("--graphon-size", type=int, default=2)
+    parser.add_argument("--seed", type=int, default=0)
     
     args = parser.parse_args()
+    if args.graphon_type == 1:
+        args.adj_matrix = erdos_renyi(args.graphon_size)
+    elif args.graphon_type == 2:
+        args.adj_matrix = stochastic_block(args.graphon_size)
+    elif args.graphon_type == 3:
+        args.adj_matrix = random_geometric(args.graphon_size)
+    
     
     return args
     
 def main(args):
-    def env_creator(env_config=None):
-        return SISGraphon()
+    register_env("sis_graphon-v0",lambda config: SISGraphon(config))
+
     
-    register_env("sis_graphon-v0",env_creator)
-    
-    model_name = 'sis_graphon'
+    model_name = 'graphon_model'
     ModelCatalog.register_custom_model(model_name, GraphonModel)
     
     
     config = ppo.DEFAULT_CONFIG.copy()
     config.update({
         "framework": "torch",
-        "train_batch_size": 256,
-        #"lr":1e-3,
-        "lr_schedule": [[0, 1e-3], [1000000, 1e-7]],
-        "rollout_fragment_length": 8,
-        "gamma": 0.95,
         "seed": 0,
         "model": {
-            "custom_model": 'sis_graphon',
+            "custom_model": 'graphon_model',
             "custom_model_config":{},
+        },
+        "env": "sis_graphon-v0",
+        "env_config":{
+            "adj_matrix": args.adj_matrix,
         },
     })
     
     
+    
+    
     agent = ppo.PPOTrainer(env='sis_graphon-v0',config=config)
     
-    agent.restore("sis_graphon-v0/PPO/PPO_sis_graphon-v0_ba8bc_00000_0_2022-05-16_15-28-06/checkpoint_000200/checkpoint-200")
+    agent.restore("results/sis_graphon_2_5/PPO/PPO_sis_graphon-v0_de122_00000_0_2022-05-18_16-31-09/checkpoint_000250/checkpoint-250")
     
-    env_g = SISGraphon()
+    env_g = SISGraphon({"adj_matrix": args.adj_matrix})
     
-    env_config = {"num_players":args.num_agents}
+    env_config = {
+        "num_players":args.num_agents,
+        "adj_matrix": args.adj_matrix,
+    }
     env = SISGraphonNPlayer(env_config)
     episode_reward = []
-    eval_num = 10
+    eval_num = 100
+    np.random.seed(args.seed)
     for T in range(eval_num):
         obs = env.reset()
         total_reward = 0
