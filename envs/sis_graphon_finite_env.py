@@ -1,11 +1,11 @@
 import sys
-import gym
+from .wrapper import GraphonNPlayerEnv
 from gym.spaces import Tuple, Discrete, MultiDiscrete, Dict, Box
 from ray.rllib import MultiAgentEnv
 import numpy as np
 
 
-class SISGraphonNPlayer(MultiAgentEnv):
+class SISGraphonNPlayer(GraphonNPlayerEnv):
     def __init__(self, env_config={}):
         super(SISGraphonNPlayer,self).__init__()
         
@@ -40,74 +40,11 @@ class SISGraphonNPlayer(MultiAgentEnv):
         self.reset()
         
     
-    def reset(self):
-        self.t = 0
-        self.x = [self.state_space.sample() for _ in range(self.N)]
-            
-        #for i in range(self.N):
-        #    for j in range(i+1,self.N):
-        #        edge_prob = self.graphon[self.x[i][0],self.x[j][0]]
-        #        edge = np.random.choice([0, 1], p=[1-edge_prob, edge_prob])
-        #        self.adj_matrix[i][j] = edge
-        #        self.adj_matrix[j][i] = edge
-            
-
-        
-
-        obs = {agent_id: self.x[agent_id] for agent_id in range(self.N)}
-        
-        return obs
-    
-    def dist_g(self):
-        mu = np.zeros((self.M,self.S))
-        m_ = np.zeros(self.M)
-        for _x in self.x:
-            m = _x[0]
-            s = _x[1]
-            mu[m][s] += 1
-            m_[m] += 1
-        
-        for m in range(self.M):
-            if m_[m] > 0:
-                mu[m][:] /= m_[m]
-        
-        return mu
-    
-    
-    def get_total_reward(self,x,u,g):
-        r = 0
-        mu = np.zeros(self.S)
-        pi = np.zeros((self.S,self.A))
-        for i in range(self.N):
-            s = x[i]
-            a = u[i]
-            mu[s] += 1
-            pi[s][a] += 1
-            
-        r += mu[1] * self.c1
-        r += pi[1][0] * self.c3
-        r += (pi[0][1] + pi[1][1]) * self.c2
-        
-        r /= self.N
-        
-        r *= -1
-        return r
     
     def get_reward(self,obs,a,g):
         s = obs[1]
         r = - s * self.c1 - s * (1-a) *self.c3 - a * self.c2
         return r / self.N
-    
-    def graphon_mean_field(self, x, agent_id):
-        mu_g = np.zeros(self.S)
-        alpha = x[agent_id][0]
-        for _x in x:
-            beta = _x[0]
-            mu_g[_x[1]] += self.adj_matrix[alpha][beta]
-        
-        mu_g /= self.N
-        
-        return mu_g
         
         
     
@@ -129,46 +66,13 @@ class SISGraphonNPlayer(MultiAgentEnv):
         return tuple([obs[0],new_s])
         
 
-    
-    def obs_transform(self,t,obs):
-        if self.time_obs_augment:
-            return tuple([obs,np.array(t,dtype=np.float32)])
-        else:
-            return obs
-    
-    
-    def seed(self,seed):
-        np.random.seed(seed)
-    
-    def render(self):
-        pass
-    
-    def close(self):
-        pass
-        
-    def step(self,u):
-        next_state = []
-        reward = {}
-        for agent_id in range(self.N):
-            G = self.graphon_mean_field(self.x, agent_id)
-            next_state.append(self.state_transition(self.x[agent_id],u[agent_id],G))
-            reward[agent_id] = self.get_reward(self.x[agent_id],u[agent_id],G)
-            
-        self.x = next_state
-        self.t += 1
-        
-     
-        observation = {agent_id: next_state[agent_id] for agent_id in range(self.N)}
-        done = {"__all__": self.t >= self.time_steps}
-        
-        return observation, reward, done, {}
 
 
 
 def test_env():
     import sys
     sys.path.append('..')
-    from graphon import stochastic_block
+    from graphon import stochastic_block, random_geometric
     
     
     env_config={
@@ -182,9 +86,10 @@ def test_env():
     for step in range(50):
         action = [env.action_space.sample() for _ in range(env.N)]
         #action = np.array([0, 1, 0, 1])
-
+        
         obs, reward, done, info = env.step(action)
         reward = [reward[idx] for idx in reward.keys()]
+
         
         total_reward += sum(reward)
         if done:

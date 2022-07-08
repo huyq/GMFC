@@ -1,17 +1,14 @@
-import gym
+from .wrapper import GraphonEnv
 from gym import spaces
 import numpy as np
 
 
-class SISGraphon(gym.Env):
+class SISGraphon(GraphonEnv):
     def __init__(self, env_config={}):
         super(SISGraphon,self).__init__()
         
-        
-        self.time_obs_augment = env_config.get("time_obs_augment", False)
         self.time_steps = env_config.get("time_steps", 50)
         self.adj_matrix = env_config.get("adj_matrix", np.array([[0.9,0.4],[0.4,0.9]]))
-
         
         # hyperparameters for state transition
         self.beta1 = env_config.get("beta1", 0.8)
@@ -39,26 +36,7 @@ class SISGraphon(gym.Env):
         self.mu = None
         self.reset()
         
-    
-    def reset(self):
-        self.t = 0
-        self.mu = self.state_space.sample()
-            
-        for m in range(self.M):
-            self.mu[m][:] = np.exp(self.mu[m][:])/sum(np.exp(self.mu[m][:]))
-            
-        #self.mu = np.array([[0.5,0.5],[0.5,0.5]])
-        obs = self.obs_transform(self.t,self.mu)
-        
-        return obs
-    
-    def graphon_mean_field(self,mu):
-        mu_g = np.zeros((self.M,self.S))
-        for i in range(self.M):
-            for s in range(self.S):
-                mu_g[i][s] = sum([mu[j][s]*self.adj_matrix[i][j] \
-                                  for j in range(self.M)]) / self.M
-        return mu_g
+
     
     
     def get_reward(self,mu,mu_g,pi):
@@ -91,74 +69,26 @@ class SISGraphon(gym.Env):
         return next_state
             
             
-    
-    def act_transform(self,act):
-        #act = np.concatenate(act)
-        #pi = act.reshape((self.M,self.S,self.A-1))
-        #pi_new = np.zeros((self.M,self.S,self.A))                                    
-        #                                    
-        #for m in range(self.M):
-        #    pi_new[m][0][0] = pi[m][0][0]
-        #    pi_new[m][0][1] = 1-pi[m][0][0]
-        #    pi_new[m][1][0] = pi[m][1][0]
-        #    pi_new[m][1][1] = 1 - pi[m][1][0]
-         
 
-        pi = act.reshape((self.M,self.S,self.A))
-        pi_new = pi.copy()
-        
-        for m in range(self.M):
-            for s in range(self.S):                        
-                pi_new[m][s][:] = np.exp(pi[m][s][:])/sum(np.exp(pi[m][s][:]))
-    
-        return pi_new
-    
-    
-    def obs_transform(self,t,obs):
-        if self.time_obs_augment:
-            return tuple([obs,np.array(t,dtype=np.float32)])
-        else:
-            return obs
-            #return obs.reshape((self.M*self.S,))
-    
-    def seed(self,seed):
-        np.random.seed(seed)
-    
-    def render(self):
-        pass
-    
-    def close(self):
-        pass
-        
-    def step(self,act):
-        pi = self.act_transform(act)
-        mu_g = self.graphon_mean_field(self.mu)
-        
-        next_state = self.aggregate_transition(self.mu,mu_g,pi)
-        observation = self.obs_transform(self.t+1,next_state)
-        reward = self.get_reward(self.mu,mu_g,pi)
-        done = self.t >= self.time_steps
-        
-        self.mu = next_state
-        self.t += 1
-        
-        return observation, reward, done, {}
     
     
     
 
 def test_env():
     env = SISGraphon()
-
+    episode_reward = 0
     for step in range(100):
         action = env.action_space.sample()
         #action = np.array([0, 1, 0, 1])
 
         obs, reward, done, info = env.step(action)
 
-        print(reward)
+        episode_reward += reward
         if done:
             env.reset()
+        
+    
+    print("episode_reward: ",episode_reward)
 
 
 

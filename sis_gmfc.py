@@ -21,10 +21,16 @@ def arg_parse():
     args = parser.parse_args()
     if args.graphon_type == 1:
         args.adj_matrix = erdos_renyi(args.graphon_size)
+        args.model_path = "results/sis_graphon_1_10/PPO/best/checkpoint_001000/checkpoint-1000"
+        
     elif args.graphon_type == 2:
         args.adj_matrix = stochastic_block(args.graphon_size)
+        args.model_path = "results/sis_graphon_2_10/PPO/best/checkpoint_001000/checkpoint-1000"
+        #args.model_path = "results/sis_graphon_2_20/PPO/best/checkpoint_001000/checkpoint-1000"
+        
     elif args.graphon_type == 3:
         args.adj_matrix = random_geometric(args.graphon_size)
+        args.model_path = "results/sis_graphon_3_10/PPO/best/checkpoint_001000/checkpoint-1000"
     
     
     return args
@@ -39,15 +45,14 @@ def main(args):
     
     config = ppo.DEFAULT_CONFIG.copy()
     config.update({
-        "framework": "torch",
-        "seed": 0,
-        "model": {
-            "custom_model": 'graphon_model',
-            "custom_model_config":{},
-        },
         "env": "sis_graphon-v0",
         "env_config":{
             "adj_matrix": args.adj_matrix,
+        },
+        "framework": "torch",
+        "model": {
+            "custom_model": 'graphon_model',
+            "custom_model_config":{},
         },
     })
     
@@ -56,7 +61,7 @@ def main(args):
     
     agent = ppo.PPOTrainer(env='sis_graphon-v0',config=config)
     
-    agent.restore("results/sis_graphon_2_5/PPO/PPO_sis_graphon-v0_de122_00000_0_2022-05-18_16-31-09/checkpoint_000250/checkpoint-250")
+    agent.restore(args.model_path)
     
     env_g = SISGraphon({"adj_matrix": args.adj_matrix})
     
@@ -66,15 +71,16 @@ def main(args):
     }
     env = SISGraphonNPlayer(env_config)
     episode_reward = []
-    eval_num = 100
+    eval_num = 1000
     np.random.seed(args.seed)
     for T in range(eval_num):
         obs = env.reset()
         total_reward = 0
         for step in range(50):
-            mu = env.dist_g()
-            pi = agent.compute_single_action(observation=mu)
-            pi = env_g.act_transform(pi)
+            mu = env.dist_g()                                       #compute state distribution
+            pi = agent.compute_single_action(observation=mu)        #sample from policy ensemble
+            
+            pi = env_g.act_transform(pi) 
             action = []
             
             for agent_id in range(env.N):
@@ -93,8 +99,9 @@ def main(args):
         
         episode_reward.append(total_reward)
                 
-    
+    reward_std = np.std(episode_reward)
     print("mean episode reward: ", sum(episode_reward)/eval_num)
+    print("std episode reward: ", reward_std)
 
 
 if __name__ == '__main__':

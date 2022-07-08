@@ -37,7 +37,7 @@ def test_single_step(agent):
     
     
     
-def train_ppo():
+def train_ppo(args):
     register_env("sis_graphon-v0",lambda config: SISGraphon(config))
     
     model_name = 'graphon_model'
@@ -51,10 +51,12 @@ def train_ppo():
             "adj_matrix": args.adj_matrix,
         },
         "framework": "torch",
+        #"num_workers": 8,
         "train_batch_size": 128,
         #"lr":1e-3,
-        "lr_schedule": [[0, 5e-4], [2000000, 1e-8]],
+        "lr_schedule": [[0, 5e-4], [20000000, 1e-8]],
         "rollout_fragment_length": 10,
+        #"entropy_coeff": 0.001,
         "gamma": 0.95,
         "seed": 0,
         "model": {
@@ -67,14 +69,14 @@ def train_ppo():
     tune.run("PPO",
              config=config,
              local_dir="results/sis_graphon_{}_{}".format(args.graphon_type,args.graphon_size),
-             stop={"training_iteration":250},
+             stop={"training_iteration":1000},
              checkpoint_freq = 10,
              checkpoint_at_end = True,
     )
 
     
     
-def train_ddpg():    
+def train_ddpg(args):    
     register_env("sis_graphon-v0",lambda config: SISGraphon(config))
 
     
@@ -110,7 +112,7 @@ def train_ddpg():
 
 
 
-def train_td3():
+def train_td3(args):
     register_env("sis_graphon-v0",lambda config: SISGraphon(config))
 
     
@@ -149,8 +151,8 @@ if __name__ == '__main__':
     args = arg_parse()
     
     if args.algo == 'ppo':
-        train_ppo()
+        train_ppo(args)
     elif args.algo == 'ddpg':
-        train_ddpg()
+        train_ddpg(args)
     elif args.algo == 'td3':
-        train_td3()
+        train_td3(args)
